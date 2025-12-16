@@ -1,84 +1,79 @@
-const express = require('express');
-const session = require('express-session');
-const multer = require('multer');
-const bcrypt = require('bcrypt');
-const path = require('path');
-const fs = require('fs');
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 
 const app = express();
-app.use(express.urlencoded({ extended: true }));
+
+/* -------------------- BASIC SETUP -------------------- */
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.use(session({
-  secret: 'render-secret-key',
-  resave: false,
-  saveUninitialized: true
-}));
+/* -------------------- TOKEN SECURITY -------------------- */
+app.use((req, res, next) => {
+  const auth = req.headers.authorization;
 
-const adminUser = {
-  username: 'admin',
-  passwordHash: bcrypt.hashSync('admin123', 10)
-};
+  if (!auth || auth !== `Bearer ${process.env.CLIENT_TOKEN}`) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+  next();
+});
+
+/* -------------------- UPLOAD CONFIG -------------------- */
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
 
 const storage = multer.diskStorage({
   destination: uploadDir,
   filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname);
+    cb(null, Date.now() + "-" + file.originalname);
   }
 });
 
 const upload = multer({ storage });
 
-function auth(req, res, next) {
-  if (req.session.user) return next();
-  res.redirect('/login');
-}
+/* -------------------- ROUTES -------------------- */
 
-app.get('/', auth, (req, res) => {
-  res.send(`
-    <h2>Upload Audio Recording</h2>
-    <form method="POST" enctype="multipart/form-data" action="/upload">
-      <input type="file" name="audio" accept="audio/*" required />
-      <br/><br/>
-      <button type="submit">Upload</button>
-    </form>
-    <br/>
-    <a href="/logout">Logout</a>
-  `);
+// Health check
+app.get("/", (req, res) => {
+  res.json({ status: "Audio service running" });
 });
 
-app.get('/login', (req, res) => {
-  res.send(`
-    <h2>Login</h2>
-    <form method="POST" action="/login">
-      <input name="username" placeholder="Username" required />
-      <br/><br/>
-      <input name="password" type="password" placeholder="Password" required />
-      <br/><br/>
-      <button type="submit">Login</button>
-    </form>
-  `);
-});
-
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  if (username === adminUser.username && bcrypt.compareSync(password, adminUser.passwordHash)) {
-    req.session.user = username;
-    return res.redirect('/');
+// Upload audio
+app.post("/upload", upload.single("audio"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
   }
-  res.send('Invalid login');
+
+  res.json({
+    message: "Upload successful",
+    filename: req.file.filename
+  });
 });
 
-app.post('/upload', auth, upload.single('audio'), (req, res) => {
-  res.send('Upload successful');
+// List uploaded files (admin / client)
+app.get("/recordings", (req, res) => {
+  const files = fs.readdirSync(uploadDir);
+  res.json(files);
 });
 
-app.get('/logout', (req, res) => {
-  req.session.destroy(() => res.redirect('/login'));
+// Stream audio file
+app.get("/recordings/:file", (req, res) => {
+  const filePath = path.join(uploadDir, req.params.file);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: "File not found" });
+  }
+
+  res.setHeader("Content-Type", "audio/mpeg");
+  fs.createReadStream(filePath).pipe(res);
 });
 
+/* -------------------- START SERVER -------------------- */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('Server running on', PORT));
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
+});
