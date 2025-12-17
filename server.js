@@ -1,14 +1,11 @@
 const express = require("express");
 const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
+const AWS = require("aws-sdk");
 
 const app = express();
-
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-/* ===== TOKEN AUTH (NO LOGIN, NO PASSWORD) ===== */
+/* ===== TOKEN AUTH ===== */
 app.use((req, res, next) => {
   const auth = req.headers.authorization;
 
@@ -18,41 +15,46 @@ app.use((req, res, next) => {
   next();
 });
 
-/* ===== UPLOAD SETUP ===== */
-const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+/* ===== MULTER (MEMORY) ===== */
+const upload = multer({ storage: multer.memoryStorage() });
 
-const storage = multer.diskStorage({
-  destination: uploadDir,
-  filename: (req, file, cb) =>
-    cb(null, Date.now() + "-" + file.originalname),
+/* ===== AWS S3 CONFIG ===== */
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION,
 });
-
-const upload = multer({ storage });
 
 /* ===== ROUTES ===== */
 app.get("/", (req, res) => {
   res.json({ status: "Service running" });
 });
 
-app.post("/upload", upload.single("audio"), (req, res) => {
-  res.json({ message: "Uploaded", file: req.file.filename });
+app.post("/upload", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  try {
+    const params = {
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: `recordings/${Date.now()}-${req.file.originalname}`,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype,
+    };
+
+    const result = await s3.upload(params).promise();
+
+    res.json({
+      success: true,
+      fileUrl: result.Location,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get("/recordings", (req, res) => {
-  res.json(fs.readdirSync(uploadDir));
-});
-
-app.get("/recordings/:file", (req, res) => {
-  const filePath = path.join(uploadDir, req.params.file);
-  if (!fs.existsSync(filePath))
-    return res.status(404).json({ error: "Not found" });
-
-  res.setHeader("Content-Type", "audio/mpeg");
-  fs.createReadStream(filePath).pipe(res);
-});
-
-/* ===== START ===== */
+/* ===== START SERVER ===== */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
   console.log("Server running on port", PORT)
