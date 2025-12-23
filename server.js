@@ -1,3 +1,6 @@
+app.get('/', (req, res) => {
+  res.redirect('/login');
+});
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
