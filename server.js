@@ -1,4 +1,7 @@
 app.get('/', (req, res) => {
+  res.send('ROOT WORKING');
+});
+app.get('/', (req, res) => {
   res.redirect('/login');
 });
 const express = require('express');
