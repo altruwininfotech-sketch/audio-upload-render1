@@ -1,9 +1,3 @@
-app.get('/', (req, res) => {
-  res.send('ROOT WORKING');
-});
-app.get('/', (req, res) => {
-  res.redirect('/login');
-});
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
@@ -12,6 +6,9 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
+
+/* ---------------- BASIC SETUP ---------------- */
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
@@ -21,13 +18,18 @@ app.use(session({
   saveUninitialized: false
 }));
 
-/* ---------------- CLIENTS ---------------- */
+/* ---------------- ROOT ROUTE (FIXED) ---------------- */
+
+app.get('/', (req, res) => {
+  return res.redirect('/login');
+});
+
+/* ---------------- CLIENT DATA ---------------- */
 
 const clients = {
   clientA: {
     username: 'clienta',
-    passwordHash: bcrypt.hashSync('password123', 10),
-    folder: 'clientA'
+    passwordHash: bcrypt.hashSync('password123', 10)
   }
 };
 
@@ -45,10 +47,10 @@ function clientAuth(req, res, next) {
 app.get('/login', (req, res) => {
   res.send(`
     <h2>Client Login</h2>
-    <form method="POST">
+    <form method="POST" action="/login">
       <input name="username" placeholder="Username" required /><br><br>
       <input type="password" name="password" placeholder="Password" required /><br><br>
-      <button>Login</button>
+      <button type="submit">Login</button>
     </form>
   `);
 });
@@ -56,14 +58,14 @@ app.get('/login', (req, res) => {
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
-  const client = Object.entries(clients)
+  const clientEntry = Object.entries(clients)
     .find(([_, c]) => c.username === username);
 
-  if (!client) return res.send('Invalid login');
+  if (!clientEntry) return res.send('Invalid login');
 
-  const [client_id, data] = client;
+  const [client_id, client] = clientEntry;
 
-  if (!bcrypt.compareSync(password, data.passwordHash)) {
+  if (!bcrypt.compareSync(password, client.passwordHash)) {
     return res.send('Invalid login');
   }
 
@@ -76,11 +78,13 @@ app.post('/login', (req, res) => {
 app.get('/dashboard', clientAuth, (req, res) => {
   res.send(`
     <h2>Your Recordings</h2>
+
     <form method="GET" action="/recordings">
-      Date: <input name="date" />
+      Date (YYYY-MM-DD): <input name="date" />
       Agent: <input name="agent" />
-      <button>Filter</button>
+      <button type="submit">Filter</button>
     </form>
+
     <br>
     <a href="/logout">Logout</a>
   `);
@@ -90,20 +94,28 @@ app.get('/dashboard', clientAuth, (req, res) => {
 
 app.get('/recordings', clientAuth, (req, res) => {
   const client_id = req.session.client_id;
-  const folder = path.join(__dirname, 'uploads', client_id);
+  const clientFolder = path.join(__dirname, 'uploads', client_id);
 
-  if (!fs.existsSync(folder)) return res.json([]);
+  if (!fs.existsSync(clientFolder)) {
+    return res.send('<p>No recordings found</p>');
+  }
 
-  let files = fs.readdirSync(folder);
+  let files = fs.readdirSync(clientFolder);
 
   const { date, agent } = req.query;
 
   if (date) files = files.filter(f => f.startsWith(date));
   if (agent) files = files.filter(f => f.includes(`_${agent}_`));
 
-  res.send(files.map(f =>
+  if (!files.length) {
+    return res.send('<p>No matching recordings</p>');
+  }
+
+  const list = files.map(f =>
     `<div>${f} <a href="/play/${f}">▶ Play</a></div>`
-  ).join(''));
+  ).join('');
+
+  res.send(list + `<br><br><a href="/dashboard">Back</a>`);
 });
 
 /* ---------------- PLAY AUDIO ---------------- */
@@ -116,7 +128,9 @@ app.get('/play/:file', clientAuth, (req, res) => {
     req.params.file
   );
 
-  if (!fs.existsSync(filePath)) return res.send('Not found');
+  if (!fs.existsSync(filePath)) {
+    return res.send('File not found');
+  }
 
   res.sendFile(filePath);
 });
@@ -127,7 +141,9 @@ app.get('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
 
-/* ---------------- START ---------------- */
+/* ---------------- START SERVER ---------------- */
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('Running on', PORT));
+app.listen(PORT, () => {
+  console.log('Server running on port', PORT);
+});
