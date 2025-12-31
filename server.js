@@ -133,7 +133,7 @@ app.get('/recordings', auth, async (req, res) => {
   let files = (data.Contents || []).map(o => o.Key);
 
   if (date) files = files.filter(f => f.startsWith(date));
-  if (agent) files = files.filter(f => f.includes(_agent_${agent}_));
+  if (agent) files = files.filter(f => f.includes(`_agent_${agent}_`));
 
   if (!files.length) {
     return res.send('<p>No recordings found<br><br><a href="/dashboard">Back</a></p>');
