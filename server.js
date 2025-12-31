@@ -11,30 +11,35 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'super-secure-key',
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false
 }));
 
 /* ---------------- AWS S3 ---------------- */
 
-const s3 = new AWS.S3({ region: process.env.AWS_REGION });
-const BUCKET = process.env.S3_BUCKET;
+const s3 = new AWS.S3({
+  region: process.env.AWS_REGION,
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+});
 
-/* ---------------- CLIENTS ---------------- */
+const BUCKET = process.env.S3_BUCKET_NAME;
+
+/* ---------------- CLIENTS (MULTI-CLIENT READY) ---------------- */
 
 const clients = {
   clientA: {
     username: 'clienta',
     passwordHash: bcrypt.hashSync('password123', 10),
-    prefix: 'clientA/'
+    prefix: '' // optional folder prefix in S3
   }
 };
 
 /* ---------------- AUTH ---------------- */
 
 function auth(req, res, next) {
-  if (!req.session.client_id) return res.redirect('/login');
+  if (!req.session.clientId) return res.redirect('/login');
   next();
 }
 
@@ -48,8 +53,8 @@ app.get('/login', (req, res) => {
   res.send(`
     <h2>Client Login</h2>
     <form method="POST">
-      <input name="username" required placeholder="Username"><br><br>
-      <input type="password" name="password" required placeholder="Password"><br><br>
+      <input name="username" placeholder="Username" required><br><br>
+      <input type="password" name="password" placeholder="Password" required><br><br>
       <button>Login</button>
     </form>
   `);
@@ -58,25 +63,26 @@ app.get('/login', (req, res) => {
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
-  const entry = Object.entries(clients)
-    .find(([_, c]) => c.username === username);
+  const entry = Object.entries(clients).find(
+    ([, c]) => c.username === username
+  );
 
   if (!entry) return res.send('Invalid login');
 
-  const [id, client] = entry;
+  const [clientId, client] = entry;
 
   if (!bcrypt.compareSync(password, client.passwordHash)) {
     return res.send('Invalid login');
   }
 
-  req.session.client_id = id;
+  req.session.clientId = clientId;
   res.redirect('/dashboard');
 });
 
 /* ---------------- DASHBOARD ---------------- */
 
 app.get('/dashboard', auth, async (req, res) => {
-  const client = clients[req.session.client_id];
+  const client = clients[req.session.clientId];
 
   const data = await s3.listObjectsV2({
     Bucket: BUCKET,
@@ -84,70 +90,73 @@ app.get('/dashboard', auth, async (req, res) => {
   }).promise();
 
   const agents = [...new Set(
-    data.Contents
+    (data.Contents || [])
       .map(o => o.Key.split('agent')[1])
       .filter(Boolean)
       .map(v => v.split('_')[0])
   )];
 
-  res.send(`
-    <h2>Your Recordings</h2>
+  const agentOptions = agents.map(a => <option value="${a}">${a}</option>).join('');
 
-    <form action="/recordings">
+  res.send(`
+    <h2>Recordings</h2>
+
+    <form method="GET" action="/recordings">
       Date:
-      <input type="date" name="date"><br><br>
+      <input type="date" name="date">
 
       Agent:
       <select name="agent">
         <option value="">All</option>
-        ${agents.map(a => <option>${a}</option>).join('')}
-      </select><br><br>
+        ${agentOptions}
+      </select>
 
       <button>Filter</button>
     </form>
 
-    <br><a href="/logout">Logout</a>
+    <br>
+    <a href="/logout">Logout</a>
   `);
 });
 
-/* ---------------- RECORDINGS ---------------- */
+/* ---------------- LIST RECORDINGS ---------------- */
 
 app.get('/recordings', auth, async (req, res) => {
-  const client = clients[req.session.client_id];
   const { date, agent } = req.query;
+  const client = clients[req.session.clientId];
 
   const data = await s3.listObjectsV2({
     Bucket: BUCKET,
     Prefix: client.prefix
   }).promise();
 
-  let files = data.Contents.map(o => o.Key.replace(client.prefix, ''));
+  let files = (data.Contents || []).map(o => o.Key);
 
   if (date) files = files.filter(f => f.startsWith(date));
   if (agent) files = files.filter(f => f.includes(_agent_${agent}_));
 
-  if (!files.length) return res.send('No recordings found');
+  if (!files.length) {
+    return res.send('<p>No recordings found<br><br><a href="/dashboard">Back</a></p>');
+  }
 
-  res.send(
-    files.map(f => `
-      <div>
-        ${f}
-        <a href="/play/${encodeURIComponent(f)}">▶ Play</a>
-        |
-        <a href="/download/${encodeURIComponent(f)}">⬇ Download</a>
-      </div>
-    `).join('') + '<br><br><a href="/dashboard">Back</a>'
-  );
+  const rows = files.map(f => `
+    <div>
+      ${f}
+      <audio controls src="/play?key=${encodeURIComponent(f)}"></audio>
+      <a href="/download?key=${encodeURIComponent(f)}">⬇ Download</a>
+    </div>
+    <hr>
+  `).join('');
+
+  res.send(rows + <br><a href="/dashboard">Back</a>);
 });
 
 /* ---------------- PLAY ---------------- */
 
-app.get('/play/:file', auth, async (req, res) => {
-  const client = clients[req.session.client_id];
-
+app.get('/play', auth, async (req, res) => {
   const stream = s3.getObject({
     Bucket: BUCKET,
-    Key: client.prefix + req.params.file
+    Key: req.query.key
   }).createReadStream();
 
   res.setHeader('Content-Type', 'audio/mpeg');
@@ -156,18 +165,14 @@ app.get('/play/:file', auth, async (req, res) => {
 
 /* ---------------- DOWNLOAD ---------------- */
 
-app.get('/download/:file', auth, async (req, res) => {
-  const client = clients[req.session.client_id];
-
-  const file = client.prefix + req.params.file;
-
-  const url = s3.getSignedUrl('getObject', {
+app.get('/download', auth, async (req, res) => {
+  const file = await s3.getObject({
     Bucket: BUCKET,
-    Key: file,
-    Expires: 60
-  });
+    Key: req.query.key
+  }).promise();
 
-  res.redirect(url);
+  res.setHeader('Content-Disposition', 'attachment');
+  res.send(file.Body);
 });
 
 /* ---------------- LOGOUT ---------------- */
@@ -179,4 +184,4 @@ app.get('/logout', (req, res) => {
 /* ---------------- START ---------------- */
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('Server running'));
+app.listen(PORT, () => console.log('Server running on', PORT));
