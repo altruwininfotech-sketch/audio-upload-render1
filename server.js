@@ -2,6 +2,14 @@ const express = require("express");
 const AWS = require("aws-sdk");
 const path = require("path");
 
+/* =========================
+   AWS S3 CONFIG
+========================= */
+AWS.config.update({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION
+});
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -9,14 +17,7 @@ app.get("/", (req, res) => {
   res.send("S3 Audio Dashboard is running successfully 🚀");
 });
 
-/* =========================
-   AWS S3 CONFIG
-========================= */
-AWS.config.update({
-  accessKeyId: process.env.AWS_ACCESS_KEY,
-  secretAccessKey: process.env.AWS_SECRET_KEY,
-  region: process.env.AWS_REGION
-});
+
 
 const s3 = new AWS.S3();
 const BUCKET = process.env.S3_BUCKET;
