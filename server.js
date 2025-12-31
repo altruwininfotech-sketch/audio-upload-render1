@@ -102,7 +102,7 @@ app.get('/recordings', clientAuth, async (req, res) => {
 
   const params = {
     Bucket: BUCKET,
-    Prefix: `${client_id}/`
+    Prefix: ${client_id}/
   };
 
   const data = await s3.send(
@@ -111,10 +111,10 @@ app.get('/recordings', clientAuth, async (req, res) => {
 
   if (!data.Contents) return res.send('No recordings');
 
-  let files = data.Contents.map(o => o.Key.replace(`${client_id}/`, ''));
+  let files = data.Contents.map(o => o.Key.replace(${client_id}/, ''));
 
   if (date) files = files.filter(f => f.startsWith(date));
-  if (agent) files = files.filter(f => f.includes(`agent_${agent}`));
+  if (agent) files = files.filter(f => f.includes(agent_${agent}));
 
   if (!files.length) return res.send('No matching recordings');
 
@@ -125,13 +125,13 @@ app.get('/recordings', clientAuth, async (req, res) => {
     </div>
   `).join('');
 
-  res.send(html + `<br><a href="/dashboard">Back</a>`);
+  res.send(html + <br><a href="/dashboard">Back</a>);
 });
 
 /* ---------------- STREAM AUDIO FROM S3 ---------------- */
 
 app.get('/play/:file', clientAuth, async (req, res) => {
-  const key = `${req.session.client_id}/${req.params.file}`;
+  const key = ${req.session.client_id}/${req.params.file};
 
   const command = new AWS.GetObjectCommand({
     Bucket: BUCKET,
