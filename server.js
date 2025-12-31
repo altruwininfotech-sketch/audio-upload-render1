@@ -96,7 +96,7 @@ app.get('/dashboard', auth, async (req, res) => {
       .map(v => v.split('_')[0])
   )];
 
-  const agentOptions = agents.map(a => <option value="${a}">${a}</option>).join('');
+  const agentOptions = agents.map(a => `<option value="${a}">${a}</option>`).join('');
 
   res.send(`
     <h2>Recordings</h2>
