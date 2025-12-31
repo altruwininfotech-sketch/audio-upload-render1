@@ -5,6 +5,10 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.get("/", (req, res) => {
+  res.send("S3 Audio Dashboard is running successfully 🚀");
+});
+
 /* =========================
    AWS S3 CONFIG
 ========================= */
