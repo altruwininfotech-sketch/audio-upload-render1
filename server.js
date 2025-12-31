@@ -1,188 +1,86 @@
-const express = require('express');
-const session = require('express-session');
-const bcrypt = require('bcrypt');
-const AWS = require('aws-sdk');
+const express = require("express");
+const AWS = require("aws-sdk");
+const path = require("path");
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-/* ---------------- BASIC SETUP ---------------- */
-
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
-
-app.use(session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false
-}));
-
-/* ---------------- AWS S3 ---------------- */
-
-const s3 = new AWS.S3({
-  region: process.env.AWS_REGION,
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+/* =========================
+   AWS S3 CONFIG
+========================= */
+AWS.config.update({
+  accessKeyId: process.env.AWS_ACCESS_KEY,
+  secretAccessKey: process.env.AWS_SECRET_KEY,
+  region: process.env.AWS_REGION
 });
 
-const BUCKET = process.env.S3_BUCKET_NAME;
+const s3 = new AWS.S3();
+const BUCKET = process.env.S3_BUCKET;
 
-/* ---------------- CLIENTS (MULTI-CLIENT READY) ---------------- */
-
-const clients = {
-  clientA: {
-    username: 'clienta',
-    passwordHash: bcrypt.hashSync('password123', 10),
-    prefix: '' // optional folder prefix in S3
-  }
+/* =========================
+   BASIC LOGIN (MULTI CLIENT)
+========================= */
+const USERS = {
+  client1: "password123",
+  client2: "password456"
 };
 
-/* ---------------- AUTH ---------------- */
+app.use(express.json());
+app.use(express.static("public"));
 
-function auth(req, res, next) {
-  if (!req.session.clientId) return res.redirect('/login');
-  next();
-}
-
-/* ---------------- ROOT ---------------- */
-
-app.get('/', (req, res) => res.redirect('/login'));
-
-/* ---------------- LOGIN ---------------- */
-
-app.get('/login', (req, res) => {
-  res.send(`
-    <h2>Client Login</h2>
-    <form method="POST">
-      <input name="username" placeholder="Username" required><br><br>
-      <input type="password" name="password" placeholder="Password" required><br><br>
-      <button>Login</button>
-    </form>
-  `);
-});
-
-app.post('/login', (req, res) => {
+app.post("/login", (req, res) => {
   const { username, password } = req.body;
-
-  const entry = Object.entries(clients).find(
-    ([, c]) => c.username === username
-  );
-
-  if (!entry) return res.send('Invalid login');
-
-  const [clientId, client] = entry;
-
-  if (!bcrypt.compareSync(password, client.passwordHash)) {
-    return res.send('Invalid login');
+  if (USERS[username] === password) {
+    return res.json({ success: true });
   }
-
-  req.session.clientId = clientId;
-  res.redirect('/dashboard');
+  res.status(401).json({ success: false });
 });
 
-/* ---------------- DASHBOARD ---------------- */
-
-app.get('/dashboard', auth, async (req, res) => {
-  const client = clients[req.session.clientId];
-
-  const data = await s3.listObjectsV2({
-    Bucket: BUCKET,
-    Prefix: client.prefix
-  }).promise();
-
-  const agents = [...new Set(
-    (data.Contents || [])
-      .map(o => o.Key.split('_agent_')[1])
-      .filter(Boolean)
-      .map(v => v.split('_')[0])
-  )];
-
-  const agentOptions = agents.map(a => `<option value="${a}">${a}</option>`).join('');
-
-  res.send(`
-    <h2>Recordings</h2>
-
-    <form method="GET" action="/recordings">
-      Date:
-      <input type="date" name="date">
-
-      Agent:
-      <select name="agent">
-        <option value="">All</option>
-        ${agentOptions}
-      </select>
-
-      <button>Filter</button>
-    </form>
-
-    <br>
-    <a href="/logout">Logout</a>
-  `);
-});
-
-/* ---------------- LIST RECORDINGS ---------------- */
-
-app.get('/recordings', auth, async (req, res) => {
+/* =========================
+   LIST RECORDINGS
+========================= */
+app.get("/recordings", async (req, res) => {
   const { date, agent } = req.query;
-  const client = clients[req.session.clientId];
 
-  const data = await s3.listObjectsV2({
+  let prefix = "";
+  if (date) prefix += date;
+  if (agent) prefix += `_agent_${agent}`;
+
+  const params = {
     Bucket: BUCKET,
-    Prefix: client.prefix
-  }).promise();
+    Prefix: prefix
+  };
 
-  let files = (data.Contents || []).map(o => o.Key);
+  try {
+    const data = await s3.listObjectsV2(params).promise();
 
-  if (date) files = files.filter(f => f.startsWith(date));
-  if (agent) files = files.filter(f => f.includes(`_agent_${agent}_`));
+    const files = data.Contents.map(obj => {
+      const key = obj.Key;
+      const parts = key.split("_");
 
-  if (!files.length) {
-    return res.send('<p>No recordings found<br><br><a href="/dashboard">Back</a></p>');
+      return {
+        key,
+        date: parts[0],
+        agent: parts[2],
+        duration: parts[4]?.replace(".mp3", ""),
+        url: s3.getSignedUrl("getObject", {
+          Bucket: BUCKET,
+          Key: key,
+          Expires: 3600
+        })
+      };
+    });
+
+    res.json(files);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  const rows = files.map(f => `
-    <div>
-      ${f}
-      <audio controls src="/play?key=${encodeURIComponent(f)}"></audio>
-      <a href="/download?key=${encodeURIComponent(f)}">⬇ Download</a>
-    </div>
-    <hr>
-  `).join('');
-
-  res.send(rows + `<br><a href="/dashboard">Back</a>`);
 });
 
-/* ---------------- PLAY ---------------- */
-
-app.get('/play', auth, async (req, res) => {
-  const stream = s3.getObject({
-    Bucket: BUCKET,
-    Key: req.query.key
-  }).createReadStream();
-
-  res.setHeader('Content-Type', 'audio/mpeg');
-  stream.pipe(res);
+/* =========================
+   START SERVER
+========================= */
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
-
-/* ---------------- DOWNLOAD ---------------- */
-
-app.get('/download', auth, async (req, res) => {
-  const file = await s3.getObject({
-    Bucket: BUCKET,
-    Key: req.query.key
-  }).promise();
-
-  res.setHeader('Content-Disposition', 'attachment');
-  res.send(file.Body);
-});
-
-/* ---------------- LOGOUT ---------------- */
-
-app.get('/logout', (req, res) => {
-  req.session.destroy(() => res.redirect('/login'));
-});
-
-/* ---------------- START ---------------- */
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('Server running on', PORT));
 
