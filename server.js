@@ -1,9 +1,7 @@
 const express = require('express');
 const session = require('express-session');
-const multer = require('multer');
 const bcrypt = require('bcrypt');
-const fs = require('fs');
-const path = require('path');
+const AWS = require('@aws-sdk/client-s3');
 
 const app = express();
 
@@ -13,18 +11,28 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 app.use(session({
-  secret: 'super-secure-key',
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false
 }));
 
-/* ---------------- ROOT ROUTE (FIXED) ---------------- */
+/* ---------------- AWS S3 CLIENT ---------------- */
 
-app.get('/', (req, res) => {
-  return res.redirect('/login');
+const s3 = new AWS.S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+  }
 });
 
-/* ---------------- CLIENT DATA ---------------- */
+const BUCKET = process.env.S3_BUCKET;
+
+/* ---------------- ROOT ---------------- */
+
+app.get('/', (req, res) => res.redirect('/login'));
+
+/* ---------------- CLIENT CREDENTIALS ---------------- */
 
 const clients = {
   clientA: {
@@ -36,9 +44,7 @@ const clients = {
 /* ---------------- AUTH MIDDLEWARE ---------------- */
 
 function clientAuth(req, res, next) {
-  if (!req.session.client_id) {
-    return res.redirect('/login');
-  }
+  if (!req.session.client_id) return res.redirect('/login');
   next();
 }
 
@@ -47,10 +53,10 @@ function clientAuth(req, res, next) {
 app.get('/login', (req, res) => {
   res.send(`
     <h2>Client Login</h2>
-    <form method="POST" action="/login">
-      <input name="username" placeholder="Username" required /><br><br>
-      <input type="password" name="password" placeholder="Password" required /><br><br>
-      <button type="submit">Login</button>
+    <form method="POST">
+      <input name="username" required placeholder="Username"/><br><br>
+      <input name="password" type="password" required placeholder="Password"/><br><br>
+      <button>Login</button>
     </form>
   `);
 });
@@ -58,16 +64,15 @@ app.get('/login', (req, res) => {
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
-  const clientEntry = Object.entries(clients)
+  const entry = Object.entries(clients)
     .find(([_, c]) => c.username === username);
 
-  if (!clientEntry) return res.send('Invalid login');
+  if (!entry) return res.send('Invalid login');
 
-  const [client_id, client] = clientEntry;
+  const [client_id, client] = entry;
 
-  if (!bcrypt.compareSync(password, client.passwordHash)) {
+  if (!bcrypt.compareSync(password, client.passwordHash))
     return res.send('Invalid login');
-  }
 
   req.session.client_id = client_id;
   res.redirect('/dashboard');
@@ -82,57 +87,61 @@ app.get('/dashboard', clientAuth, (req, res) => {
     <form method="GET" action="/recordings">
       Date (YYYY-MM-DD): <input name="date" />
       Agent: <input name="agent" />
-      <button type="submit">Filter</button>
+      <button>Filter</button>
     </form>
 
-    <br>
-    <a href="/logout">Logout</a>
+    <br><a href="/logout">Logout</a>
   `);
 });
 
-/* ---------------- LIST RECORDINGS ---------------- */
+/* ---------------- LIST RECORDINGS FROM S3 ---------------- */
 
-app.get('/recordings', clientAuth, (req, res) => {
+app.get('/recordings', clientAuth, async (req, res) => {
   const client_id = req.session.client_id;
-  const clientFolder = path.join(__dirname, 'uploads', client_id);
-
-  if (!fs.existsSync(clientFolder)) {
-    return res.send('<p>No recordings found</p>');
-  }
-
-  let files = fs.readdirSync(clientFolder);
-
   const { date, agent } = req.query;
 
-  if (date) files = files.filter(f => f.startsWith(date));
-  if (agent) files = files.filter(f => f.includes(`_${agent}_`));
+  const params = {
+    Bucket: BUCKET,
+    Prefix: `${client_id}/`
+  };
 
-  if (!files.length) {
-    return res.send('<p>No matching recordings</p>');
-  }
-
-  const list = files.map(f =>
-    `<div>${f} <a href="/play/${f}">▶ Play</a></div>`
-  ).join('');
-
-  res.send(list + `<br><br><a href="/dashboard">Back</a>`);
-});
-
-/* ---------------- PLAY AUDIO ---------------- */
-
-app.get('/play/:file', clientAuth, (req, res) => {
-  const filePath = path.join(
-    __dirname,
-    'uploads',
-    req.session.client_id,
-    req.params.file
+  const data = await s3.send(
+    new AWS.ListObjectsV2Command(params)
   );
 
-  if (!fs.existsSync(filePath)) {
-    return res.send('File not found');
-  }
+  if (!data.Contents) return res.send('No recordings');
 
-  res.sendFile(filePath);
+  let files = data.Contents.map(o => o.Key.replace(`${client_id}/`, ''));
+
+  if (date) files = files.filter(f => f.startsWith(date));
+  if (agent) files = files.filter(f => f.includes(`agent_${agent}`));
+
+  if (!files.length) return res.send('No matching recordings');
+
+  const html = files.map(f => `
+    <div>
+      ${f}
+      <audio controls src="/play/${encodeURIComponent(f)}"></audio>
+    </div>
+  `).join('');
+
+  res.send(html + `<br><a href="/dashboard">Back</a>`);
+});
+
+/* ---------------- STREAM AUDIO FROM S3 ---------------- */
+
+app.get('/play/:file', clientAuth, async (req, res) => {
+  const key = `${req.session.client_id}/${req.params.file}`;
+
+  const command = new AWS.GetObjectCommand({
+    Bucket: BUCKET,
+    Key: key
+  });
+
+  const data = await s3.send(command);
+
+  res.setHeader('Content-Type', 'audio/mpeg');
+  data.Body.pipe(res);
 });
 
 /* ---------------- LOGOUT ---------------- */
@@ -144,6 +153,4 @@ app.get('/logout', (req, res) => {
 /* ---------------- START SERVER ---------------- */
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log('Server running on port', PORT);
-});
+app.listen(PORT, () => console.log('Server running on', PORT));
