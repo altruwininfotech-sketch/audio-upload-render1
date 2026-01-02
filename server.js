@@ -1,21 +1,51 @@
-const express = require("express");
-const path = require("path");
+import express from "express";
+import AWS from "aws-sdk";
+import path from "path";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(express.json());
-
-// ✅ VERY IMPORTANT
-// This serves public/index.html automatically on "/"
-app.use(express.static(path.join(__dirname, "public")));
-
-// Health check API (optional)
-app.get("/api/health", (req, res) => {
-  res.json({ status: "OK", service: "Audio Dashboard Backend" });
+// -------- AWS S3 CONFIG --------
+AWS.config.update({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION
 });
 
+const s3 = new AWS.S3();
+const BUCKET_NAME = process.env.S3_BUCKET_NAME;
+
+// -------- STATIC FILES --------
+app.use(express.static("public"));
+
+// -------- ROOT ROUTE --------
+app.get("/", (req, res) => {
+  res.sendFile(path.join(process.cwd(), "public", "index.html"));
+});
+
+// -------- FETCH AUDIO LIST --------
+app.get("/api/audios", async (req, res) => {
+  try {
+    const data = await s3
+      .listObjectsV2({
+        Bucket: BUCKET_NAME
+      })
+      .promise();
+
+    const files = data.Contents.map(file => ({
+      name: file.Key,
+      url: `https://${BUCKET_NAME}.s3.amazonaws.com/${file.Key}`,
+      date: file.LastModified
+    }));
+
+    res.json(files);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------- START SERVER --------
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log("S3 Audio Dashboard is running successfully 🚀");
 });
+
