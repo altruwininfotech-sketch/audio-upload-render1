@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Audio Audit Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      padding: 30px;
+    }
+    h1 {
+      margin-bottom: 20px;
+    }
+    .filters {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    select, button {
+      padding: 10px;
+      font-size: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+    }
+    th, td {
+      padding: 12px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    th {
+      background: #eee;
+    }
+    audio {
+      width: 200px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🎧 Audio Audit Dashboard</h1>
+
+  <div class="filters">
+    <select id="agent">
+      <option value="">Select Agent</option>
+      <option>Agent A</option>
+      <option>Agent B</option>
+    </select>
+
+    <select id="date">
+      <option value="">Select Date</option>
+      <option>2026-01-01</option>
+      <option>2026-01-02</option>
+    </select>
+
+    <button onclick="loadData()">Load Recordings</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Agent</th>
+        <th>Date</th>
+        <th>Play</th>
+        <th>Download</th>
+      </tr>
+    </thead>
+    <tbody id="rows">
+      <tr>
+        <td>Agent A</td>
+        <td>2026-01-01</td>
+        <td>
+          <audio controls>
+            <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
+          </audio>
+        </td>
+        <td>
+          <a href="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" download>
+            Download
+          </a>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <script>
+    function loadData() {
+      alert("Next step: connect this to S3 + API");
+    }
+  </script>
+
+</body>
+</html>
+
