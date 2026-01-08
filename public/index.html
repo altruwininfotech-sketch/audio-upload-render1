@@ -2,13 +2,20 @@
 <html>
 <head>
   <title>S3 Audio Dashboard</title>
-  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<h1>🎧 S3 Audio Dashboard</h1>
+<h2>S3 Audio Dashboard</h2>
 
-<table>
+<select id="agentFilter">
+  <option value="">All Agents</option>
+</select>
+
+<input type="date" id="dateFilter" />
+
+<button onclick="loadAudios()">Load</button>
+
+<table border="1">
   <thead>
     <tr>
       <th>Audio Name</th>
@@ -17,10 +24,9 @@
       <th>Download</th>
     </tr>
   </thead>
-  <tbody id="audioTable"></tbody>
+  <tbody id="audioTableBody"></tbody>
 </table>
 
 <script src="script.js"></script>
 </body>
 </html>
-

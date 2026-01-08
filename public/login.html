@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Client Login</title>
+</head>
+<body>
+  <h2>Client Login</h2>
+
+  <input id="username" placeholder="Username" />
+  <input id="password" type="password" placeholder="Password" />
+  <button onclick="login()">Login</button>
+
+  <script>
+    async function login() {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: username.value,
+          password: password.value
+        })
+      });
+
+      const data = await res.json();
+      if (!data.token) return alert("Login failed");
+
+      localStorage.setItem("token", data.token);
+      window.location.href = "/index.html";
+    }
+  </script>
+</body>
+</html>
