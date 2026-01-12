@@ -1,24 +1,22 @@
-async function loadAudios() {
-  const res = await fetch("/api/audios");
-  if (!res.ok) {
-    alert("Not authorized");
-    return;
-  }
+document.getElementById("loginBtn").addEventListener("click", login);
+
+async function login() {
+  const username = document.getElementById("username").value;
+  const password = document.getElementById("password").value;
+
+  const res = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
 
   const data = await res.json();
-  const tbody = document.getElementById("audioTableBody");
-  tbody.innerHTML = "";
 
-  data.forEach(file => {
-    const tr = document.createElement("tr");
-
-    tr.innerHTML = `
-      <td>${file.key}</td>
-      <td><audio controls src="${file.url}"></audio></td>
-      <td><a href="${file.url}" download>Download</a></td>
-    `;
-
-    tbody.appendChild(tr);
-  });
+  if (data.token) {
+    localStorage.setItem("token", data.token);
+    window.location.href = "/dashboard.html";
+  } else {
+    document.getElementById("error").innerText =
+      data.error || "Login failed";
+  }
 }
-

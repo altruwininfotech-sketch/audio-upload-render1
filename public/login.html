@@ -1,32 +1,23 @@
-<script>
-async function login() {
-  const username = document.getElementById("username").value;
-  const password = document.getElementById("password").value;
-  const errorEl = document.getElementById("error");
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Login</title>
+</head>
+<body>
 
-  errorEl.textContent = "";
+  <h2>Login</h2>
 
-  try {
-    const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ username, password })
-    });
+  <input id="username" placeholder="Username" />
+  <br><br>
 
-    const data = await res.json();
+  <input id="password" type="password" placeholder="Password" />
+  <br><br>
 
-    if (res.ok && data.token) {
-      localStorage.setItem('token', data.token);
-      window.location.href = '/dashboard.html';
-    } else {
-      errorEl.textContent = data.error || 'Login failed';
-    }
+  <button id="loginBtn">Login</button>
 
-  } catch (err) {
-    console.error(err);
-    errorEl.textContent = 'Server error';
-  }
-}
-</script>
+  <p id="error" style="color:red;"></p>
+
+  <script src="script.js"></script>
+</body>
+</html>
