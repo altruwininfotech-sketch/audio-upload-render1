@@ -25,16 +25,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /*****************************************************************
- * ENV CHECK (KEEP THIS)
- *****************************************************************/
-console.log('ENV CHECK', {
-  AWS_ACCESS_KEY_ID: !!process.env.AWS_ACCESS_KEY_ID,
-  AWS_SECRET_ACCESS_KEY: !!process.env.AWS_SECRET_ACCESS_KEY,
-  AWS_REGION: process.env.AWS_REGION,
-  S3_BUCKET_NAME: process.env.S3_BUCKET_NAME
-});
-
-/*****************************************************************
  * APP SETUP
  *****************************************************************/
 const app = express();
@@ -45,60 +35,64 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 /*****************************************************************
- * STATIC ADMIN USER (DO NOT CHANGE)
+ * ENV CHECK (SAFE)
  *****************************************************************/
-const ADMIN_USER = {
-  username: process.env.ADMIN_USERNAME || 'admin',
-  password: process.env.ADMIN_PASSWORD || 'admin123'
-};
+console.log('ENV CHECK', {
+  AWS_ACCESS_KEY_ID: !!process.env.AWS_ACCESS_KEY_ID,
+  AWS_SECRET_ACCESS_KEY: !!process.env.AWS_SECRET_ACCESS_KEY,
+  AWS_REGION: process.env.AWS_REGION,
+  S3_BUCKET_NAME: process.env.S3_BUCKET_NAME,
+  ADMIN_USERNAME: process.env.ADMIN_USERNAME
+});
+
+/*****************************************************************
+ * STATIC ADMIN USER
+ *****************************************************************/
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 /*****************************************************************
  * JWT AUTH MIDDLEWARE
  *****************************************************************/
 function auth(req, res, next) {
   const header = req.headers.authorization;
-  if (!header) return res.status(401).json({ error: 'No token' });
+  if (!header) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
 
   const token = header.split(' ')[1];
+
   try {
     jwt.verify(token, process.env.JWT_SECRET);
     next();
-  } catch {
-    res.status(401).json({ error: 'Invalid token' });
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
   }
 }
 
 /*****************************************************************
- * LOGIN ROUTE
+ * LOGIN ROUTE (FIXED — SINGLE ROUTE ONLY)
  *****************************************************************/
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
 
-  console.log("LOGIN ATTEMPT:", {
-    receivedUser: username,
-    receivedPass: password,
-    envUser: process.env.ADMIN_USERNAME,
-    envPass: process.env.ADMIN_PASSWORD
-  });
+  console.log('LOGIN ATTEMPT:', username);
 
-  if (
-    username !== (process.env.ADMIN_USERNAME || 'admin') ||
-    password !== (process.env.ADMIN_PASSWORD || 'admin123')
-  ) {
-    return res.status(401).json({ error: 'Invalid login' });
+  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    const token = jwt.sign(
+      { username },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+
+    return res.json({ token });
   }
 
-  const token = jwt.sign(
-    { username },
-    process.env.JWT_SECRET,
-    { expiresIn: '8h' }
-  );
-
-  res.json({ token });
+  return res.status(401).json({ error: 'Invalid credentials' });
 });
 
 /*****************************************************************
- * S3 CLIENT (AWS SDK v3 — FINAL)
+ * S3 CLIENT
  *****************************************************************/
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
@@ -109,7 +103,7 @@ const s3 = new S3Client({
 });
 
 /*****************************************************************
- * S3 CONNECTION TEST (RUNS ON START)
+ * S3 CONNECTION TEST (ON START)
  *****************************************************************/
 (async () => {
   try {
@@ -125,7 +119,7 @@ const s3 = new S3Client({
 })();
 
 /*****************************************************************
- * LIST AUDIO FILES (JWT + DATE + AGENT FILTERING)
+ * LIST AUDIO FILES (JWT + FILTERS)
  *****************************************************************/
 app.get('/api/audios', auth, async (req, res) => {
   try {
@@ -138,22 +132,14 @@ app.get('/api/audios', auth, async (req, res) => {
     });
 
     const data = await s3.send(command);
-
     if (!data.Contents) return res.json([]);
 
     const files = data.Contents
       .filter(o => o.Key && o.Key.endsWith('.mp3'))
       .filter(o => {
         const key = o.Key.toLowerCase();
-
-        if (agentFilter && !key.includes(`agent-${agentFilter}`)) {
-          return false;
-        }
-
-        if (dateFilter && !key.startsWith(dateFilter)) {
-          return false;
-        }
-
+        if (agentFilter && !key.includes(`agent-${agentFilter}`)) return false;
+        if (dateFilter && !key.startsWith(dateFilter)) return false;
         return true;
       })
       .map(o => ({
@@ -164,13 +150,17 @@ app.get('/api/audios', auth, async (req, res) => {
     res.json(files);
   } catch (err) {
     console.error('S3 LIST ERROR:', err);
-    res.status(500).json({ error: err.name + ': ' + err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
 /*****************************************************************
- * FALLBACK ROUTE
+ * ROOT & FALLBACK ROUTES
  *****************************************************************/
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
@@ -179,6 +169,6 @@ app.get('*', (req, res) => {
  * START SERVER
  *****************************************************************/
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
 
