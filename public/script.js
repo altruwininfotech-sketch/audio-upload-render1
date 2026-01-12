@@ -1,45 +1,24 @@
-const token = localStorage.getItem("token");
-if (!token) window.location.href = "/login.html";
-
 async function loadAudios() {
-  const res = await fetch("/api/audios", {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-
-  if (!res.ok) return alert("Unable to load recordings");
+  const res = await fetch("/api/audios");
+  if (!res.ok) {
+    alert("Not authorized");
+    return;
+  }
 
   const data = await res.json();
+  const tbody = document.getElementById("audioTableBody");
+  tbody.innerHTML = "";
 
-  const agentSet = new Set();
-  data.forEach(a => agentSet.add(a.agent));
+  data.forEach(file => {
+    const tr = document.createElement("tr");
 
-  agentFilter.innerHTML = `<option value="">All Agents</option>`;
-  agentSet.forEach(a => {
-    agentFilter.innerHTML += `<option>${a}</option>`;
+    tr.innerHTML = `
+      <td>${file.key}</td>
+      <td><audio controls src="${file.url}"></audio></td>
+      <td><a href="${file.url}" download>Download</a></td>
+    `;
+
+    tbody.appendChild(tr);
   });
-
-  renderTable(data);
 }
-
-function renderTable(data) {
-  audioTableBody.innerHTML = "";
-
-  const agent = agentFilter.value;
-  const date = dateFilter.value;
-
-  data
-    .filter(a => !agent || a.agent === agent)
-    .filter(a => !date || a.date.startsWith(date))
-    .forEach(a => {
-      audioTableBody.innerHTML += `
-        <tr>
-          <td>${a.name}</td>
-          <td>${new Date(a.date).toLocaleString()}</td>
-          <td><audio controls src="${a.url}"></audio></td>
-          <td><a href="${a.url}" download>Download</a></td>
-        </tr>`;
-    });
-}
-
-loadAudios();
 
