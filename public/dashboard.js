@@ -1,6 +1,7 @@
 /*****************************************************************
  * AUTH CHECK
  *****************************************************************/
+console.log("TOKEN FOUND:", token);
 const token = localStorage.getItem("token");
 if (!token) {
   window.location.href = "/login.html";
