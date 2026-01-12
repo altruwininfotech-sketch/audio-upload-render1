@@ -1,18 +1,38 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Audio Audit Dashboard</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Audio Dashboard</title>
 </head>
 <body>
+  <h2>Audio Recordings</h2>
 
-  <h2>Audio Audit Dashboard</h2>
+  <label>Agent:</label>
+  <select id="agentFilter">
+    <option value="">All</option>
+  </select>
 
-  <button onclick="loadRecordings()">Load Recordings</button>
+  <label>Date:</label>
+  <input type="date" id="dateFilter">
 
-  <div id="recordings"></div>
+  <button onclick="loadAudios()">Load</button>
 
-  <!-- ONLY include script -->
-  <script src="script.js"></script>
+  <br><br>
+
+  <table border="1">
+    <thead>
+      <tr>
+        <th>Audio Name</th>
+        <th>Date</th>
+        <th>Play</th>
+        <th>Download</th>
+      </tr>
+    </thead>
+    <tbody id="audioTableBody"></tbody>
+  </table>
+
+  <br>
+  <a href="#" onclick="logout()">Logout</a>
+
+  <script src="dashboard.js"></script>
 </body>
 </html>

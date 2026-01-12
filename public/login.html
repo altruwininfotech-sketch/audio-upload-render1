@@ -1,32 +1,32 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Client Login</title>
-</head>
-<body>
-  <h2>Client Login</h2>
+<script>
+async function login() {
+  const username = document.getElementById("username").value;
+  const password = document.getElementById("password").value;
+  const errorEl = document.getElementById("error");
 
-  <input id="username" placeholder="Username" />
-  <input id="password" type="password" placeholder="Password" />
-  <button onclick="login()">Login</button>
+  errorEl.textContent = "";
 
-  <script>
-    async function login() {
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: username.value,
-          password: password.value
-        })
-      });
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ username, password })
+    });
 
-      const data = await res.json();
-      if (!data.token) return alert("Login failed");
+    const data = await res.json();
 
-      localStorage.setItem("token", data.token);
-      window.location.href = "/index.html";
+    if (res.ok && data.token) {
+      localStorage.setItem('token', data.token);
+      window.location.href = '/dashboard.html';
+    } else {
+      errorEl.textContent = data.error || 'Login failed';
     }
-  </script>
-</body>
-</html>
+
+  } catch (err) {
+    console.error(err);
+    errorEl.textContent = 'Server error';
+  }
+}
+</script>
