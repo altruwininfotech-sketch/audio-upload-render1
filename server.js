@@ -1,5 +1,5 @@
 /*****************************************************************
- * LOAD ENV — MUST BE FIRST
+ * LOAD ENV
  *****************************************************************/
 import 'dotenv/config';
 
@@ -18,7 +18,7 @@ import {
 } from '@aws-sdk/client-s3';
 
 /*****************************************************************
- * ES MODULE __dirname FIX
+ * __dirname FIX (ES MODULE)
  *****************************************************************/
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,50 +31,47 @@ const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json());
+
+/* ✅ STATIC FILES — THIS IS CRITICAL */
 app.use(express.static(path.join(__dirname, 'public')));
 
 /*****************************************************************
- * ENV CHECK (SAFE)
+ * ADMIN CREDS
  *****************************************************************/
-console.log('ENV CHECK', {
-  AWS_ACCESS_KEY_ID: !!process.env.AWS_ACCESS_KEY_ID,
-  AWS_SECRET_ACCESS_KEY: !!process.env.AWS_SECRET_ACCESS_KEY,
-  AWS_REGION: process.env.AWS_REGION,
-  S3_BUCKET_NAME: process.env.S3_BUCKET_NAME,
-  JWT_SECRET: !!process.env.JWT_SECRET
-});
+const ADMIN_USER = {
+  username: process.env.ADMIN_USERNAME || 'admin',
+  password: process.env.ADMIN_PASSWORD || 'admin123'
+};
 
 /*****************************************************************
- * JWT AUTH MIDDLEWARE
+ * JWT MIDDLEWARE
  *****************************************************************/
 function auth(req, res, next) {
   const header = req.headers.authorization;
 
   if (!header) {
-    return res.status(401).json({ error: "No token provided" });
+    return res.status(401).json({ error: 'No token provided' });
   }
 
-  const token = header.split(" ")[1];
+  const token = header.split(' ')[1];
 
   try {
     jwt.verify(token, process.env.JWT_SECRET);
     next();
   } catch {
-    return res.status(401).json({ error: "Invalid token" });
+    return res.status(401).json({ error: 'Invalid token' });
   }
 }
 
 /*****************************************************************
- * LOGIN ROUTE (FIXED — SINGLE ROUTE ONLY)
+ * LOGIN ROUTE ✅ FIXED (ONLY ONE)
  *****************************************************************/
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
 
-  console.log("LOGIN ATTEMPT:", { username, password });
-
   if (
-    username === process.env.ADMIN_USERNAME &&
-    password === process.env.ADMIN_PASSWORD
+    username === ADMIN_USER.username &&
+    password === ADMIN_USER.password
   ) {
     const token = jwt.sign(
       { username },
@@ -89,7 +86,7 @@ app.post('/api/login', (req, res) => {
 });
 
 /*****************************************************************
- * S3 CLIENT
+ * AWS S3
  *****************************************************************/
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
@@ -100,13 +97,15 @@ const s3 = new S3Client({
 });
 
 /*****************************************************************
- * S3 CONNECTION TEST
+ * S3 TEST
  *****************************************************************/
 (async () => {
   try {
-    await s3.send(new HeadBucketCommand({
-      Bucket: process.env.S3_BUCKET_NAME
-    }));
+    await s3.send(
+      new HeadBucketCommand({
+        Bucket: process.env.S3_BUCKET_NAME
+      })
+    );
     console.log('✅ S3 CONNECTED');
   } catch (err) {
     console.error('❌ S3 ERROR:', err.message);
@@ -114,16 +113,16 @@ const s3 = new S3Client({
 })();
 
 /*****************************************************************
- * LIST AUDIO FILES
+ * LIST AUDIOS
  *****************************************************************/
 app.get('/api/audios', auth, async (req, res) => {
   try {
-    const command = new ListObjectsV2Command({
-      Bucket: process.env.S3_BUCKET_NAME,
-      MaxKeys: 1000
-    });
-
-    const data = await s3.send(command);
+    const data = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: process.env.S3_BUCKET_NAME,
+        MaxKeys: 1000
+      })
+    );
 
     if (!data.Contents) return res.json([]);
 
@@ -141,7 +140,7 @@ app.get('/api/audios', auth, async (req, res) => {
 });
 
 /*****************************************************************
- * FALLBACK → LOGIN PAGE
+ * FALLBACK — MUST BE LAST
  *****************************************************************/
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
